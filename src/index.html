@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Erfpacht Zaanstad: koopsom vol eigendom (onofficieel) / Zaanstad leasehold calculator (unofficial)</title>
+  <meta name="description" content="Onofficiële rekenhulp voor de koopsom van erfpachtgrond in Zaanstad. Unofficial calculator for the leasehold purchase price in Zaanstad.">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <p class="brand">Erfpacht-rekenhulp</p>
+      <div class="lang" role="group" id="lang-group">
+        <button type="button" class="lang-btn" data-lang="nl" lang="nl">NL</button>
+        <button type="button" class="lang-btn" data-lang="en" lang="en">EN</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <h1 data-i18n="h1"></h1>
+
+    <section class="notice notice-unofficial" aria-labelledby="unofficial-title">
+      <h2 id="unofficial-title" data-i18n="unofficial_title"></h2>
+      <p data-i18n="unofficial_text"></p>
+    </section>
+
+    <p class="intro" data-i18n="intro"></p>
+
+    <section class="notice notice-warn" aria-labelledby="notbuyoff-title">
+      <h2 id="notbuyoff-title" data-i18n="notBuyoff_title"></h2>
+      <p data-i18n="notBuyoff_text"></p>
+    </section>
+
+    <p class="notice notice-info" id="validity"></p>
+
+    <noscript>
+      <p class="notice notice-warn">Deze rekenhulp werkt alleen met JavaScript. / This calculator needs JavaScript.</p>
+    </noscript>
+
+    <form id="calc" novalidate>
+      <p id="error-summary" class="error-summary" tabindex="-1" hidden></p>
+
+      <section class="card" aria-labelledby="step1-title">
+        <h2 id="step1-title" data-i18n="step1_title"></h2>
+        <p data-i18n="step1_intro"></p>
+
+        <fieldset class="q" id="fs-canon">
+          <legend data-i18n="q_canon"></legend>
+          <p class="help" id="help-canon" data-i18n="q_canon_help"></p>
+          <p class="error" id="err-canon" hidden></p>
+          <label class="choice"><input type="radio" name="canon" value="boughtOff" aria-describedby="help-canon err-canon"> <span data-i18n="canon_boughtOff"></span></label>
+          <label class="choice"><input type="radio" name="canon" value="periodic" aria-describedby="help-canon err-canon"> <span data-i18n="canon_periodic"></span></label>
+          <label class="choice"><input type="radio" name="canon" value="unknown" aria-describedby="help-canon err-canon"> <span data-i18n="canon_unknown"></span></label>
+        </fieldset>
+
+        <fieldset class="q" id="fs-period">
+          <legend data-i18n="q_period"></legend>
+          <p class="help" id="help-period" data-i18n="q_period_help"></p>
+          <p class="error" id="err-period" hidden></p>
+          <label class="choice"><input type="radio" name="period" value="fifty" aria-describedby="help-period err-period"> <span data-i18n="period_fifty"></span></label>
+          <label class="choice"><input type="radio" name="period" value="other" aria-describedby="help-period err-period"> <span data-i18n="period_other"></span></label>
+          <label class="choice"><input type="radio" name="period" value="unknown" aria-describedby="help-period err-period"> <span data-i18n="period_unknown"></span></label>
+        </fieldset>
+
+        <fieldset class="q" id="fs-issuer">
+          <legend data-i18n="q_issuer"></legend>
+          <p class="help" id="help-issuer" data-i18n="q_issuer_help"></p>
+          <p class="error" id="err-issuer" hidden></p>
+          <label class="choice"><input type="radio" name="issuer" value="municipality" aria-describedby="help-issuer err-issuer"> <span data-i18n="issuer_municipality"></span></label>
+          <label class="choice"><input type="radio" name="issuer" value="bkz" aria-describedby="help-issuer err-issuer"> <span data-i18n="issuer_bkz"></span></label>
+          <label class="choice"><input type="radio" name="issuer" value="unknown" aria-describedby="help-issuer err-issuer"> <span data-i18n="issuer_unknown"></span></label>
+        </fieldset>
+
+        <fieldset class="q" id="fs-use">
+          <legend data-i18n="q_use"></legend>
+          <p class="help" id="help-use" data-i18n="q_use_help"></p>
+          <p class="error" id="err-use" hidden></p>
+          <label class="choice"><input type="radio" name="use" value="residential" aria-describedby="help-use err-use"> <span data-i18n="use_residential"></span></label>
+          <label class="choice"><input type="radio" name="use" value="other" aria-describedby="help-use err-use"> <span data-i18n="use_other"></span></label>
+          <label class="choice"><input type="radio" name="use" value="unknown" aria-describedby="help-use err-use"> <span data-i18n="use_unknown"></span></label>
+        </fieldset>
+
+        <p class="note" data-i18n="apartment_note"></p>
+      </section>
+
+      <section class="card" aria-labelledby="step2-title">
+        <h2 id="step2-title" data-i18n="step2_title"></h2>
+
+        <div class="field">
+          <label for="woz" data-i18n="woz_label"></label>
+          <p class="help" id="help-woz" data-i18n="woz_help"></p>
+          <p class="error" id="err-woz" hidden></p>
+          <input id="woz" name="woz" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="help-woz err-woz">
+        </div>
+
+        <fieldset class="q" id="fs-mode">
+          <legend data-i18n="mode_legend"></legend>
+          <p class="error" id="err-mode" hidden></p>
+          <label class="choice"><input type="radio" name="mode" value="endDate" checked aria-describedby="err-mode"> <span data-i18n="mode_endDate"></span></label>
+          <label class="choice"><input type="radio" name="mode" value="years" aria-describedby="err-mode"> <span data-i18n="mode_years"></span></label>
+        </fieldset>
+
+        <div class="field" id="field-endDate">
+          <label for="endDate" data-i18n="endDate_label"></label>
+          <p class="help" id="help-endDate" data-i18n="endDate_help"></p>
+          <p class="error" id="err-endDate" hidden></p>
+          <input id="endDate" name="endDate" type="date" aria-describedby="help-endDate err-endDate">
+        </div>
+
+        <div class="field" id="field-years" hidden>
+          <label for="years" data-i18n="years_label"></label>
+          <p class="help" id="help-years" data-i18n="years_help"></p>
+          <p class="error" id="err-years" hidden></p>
+          <input id="years" name="years" type="text" inputmode="numeric" autocomplete="off" aria-describedby="help-years err-years">
+        </div>
+
+        <div class="field">
+          <label for="conversionDate" data-i18n="conversion_label"></label>
+          <p class="help" id="help-conversionDate" data-i18n="conversion_help"></p>
+          <p class="error" id="err-conversionDate" hidden></p>
+          <input id="conversionDate" name="conversionDate" type="date" aria-describedby="help-conversionDate err-conversionDate">
+        </div>
+
+        <button type="submit" class="btn" data-i18n="submit"></button>
+      </section>
+    </form>
+
+    <section id="result" class="result" aria-live="polite" aria-atomic="true"></section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p><strong data-i18n="footer_unofficial"></strong></p>
+      <h2 data-i18n="footer_sources_title"></h2>
+      <ul class="sources">
+        <li data-i18n-link="publication"></li>
+        <li data-i18n-link="table"></li>
+        <li data-i18n-link="municipalPage"></li>
+        <li data-i18n-link="example2024"></li>
+      </ul>
+      <p id="footer-verified"></p>
+      <p id="footer-publisher"></p>
+      <p data-i18n="footer_privacy"></p>
+    </div>
+  </footer>
+</body>
+</html>

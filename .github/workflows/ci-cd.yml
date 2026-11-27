@@ -1,0 +1,166 @@
+name: ci-cd
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, closed]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Deny everything by default; each job requests only what it needs.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  test:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      # Production deploys must carry a real publisher/contact line.
+      REQUIRE_PUBLISHER: ${{ github.event_name != 'pull_request' && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Unit tests
+        run: npm test
+      - name: Install Chromium for the smoke test
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Browser smoke test (360 px, both languages, CSP)
+        run: npm run test:smoke
+
+  preview:
+    # Same-repository PRs only: fork PRs never reach a job with Azure access.
+    if: >-
+      github.event_name == 'pull_request' && github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: preview
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write # the deploy action comments the preview URL on the PR
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - id: swa
+        name: Fetch deployment token (masked)
+        run: |
+          token="$(az staticwebapp secrets list --name "${{ vars.SWA_NAME }}" --resource-group "${{ vars.SWA_RESOURCE_GROUP }}" --query properties.apiKey -o tsv)"
+          [ -n "$token" ] || { echo "::error::Could not read the deployment token"; exit 1; }
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+      - name: Deploy preview environment
+        uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          repo_token: ${{ github.token }}
+          action: upload
+          app_location: src
+          output_location: ''
+          skip_app_build: true
+          skip_api_build: true
+
+  close-preview:
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: preview
+    permissions:
+      id-token: write
+    steps:
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - id: swa
+        name: Fetch deployment token (masked)
+        run: |
+          token="$(az staticwebapp secrets list --name "${{ vars.SWA_NAME }}" --resource-group "${{ vars.SWA_RESOURCE_GROUP }}" --query properties.apiKey -o tsv)"
+          [ -n "$token" ] || { echo "::error::Could not read the deployment token"; exit 1; }
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+      - name: Remove preview environment
+        uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          action: close
+          app_location: src
+
+  production:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: ${{ steps.host.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - id: swa
+        name: Fetch deployment token (masked)
+        run: |
+          token="$(az staticwebapp secrets list --name "${{ vars.SWA_NAME }}" --resource-group "${{ vars.SWA_RESOURCE_GROUP }}" --query properties.apiKey -o tsv)"
+          [ -n "$token" ] || { echo "::error::Could not read the deployment token"; exit 1; }
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+      - id: host
+        name: Resolve production hostname
+        run: |
+          host="$(az staticwebapp show --name "${{ vars.SWA_NAME }}" --resource-group "${{ vars.SWA_RESOURCE_GROUP }}" --query defaultHostname -o tsv)"
+          echo "url=https://$host/" >> "$GITHUB_OUTPUT"
+      - name: Deploy to production
+        uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          action: upload
+          app_location: src
+          output_location: ''
+          skip_app_build: true
+          skip_api_build: true
+      - name: Verify security headers and content on production
+        run: |
+          for i in 1 2 3 4 5; do
+            node tools/check-headers.mjs "${{ steps.host.outputs.url }}" && exit 0
+            sleep 15
+          done
+          exit 1

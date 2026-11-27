@@ -1,0 +1,17 @@
+{
+  "name": "erfpacht-zaanstad",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Unofficial calculator for the 2027 purchase price to convert Zaanstad leasehold to full ownership.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node tools/serve.mjs 8080",
+    "test": "node --test \"test/unit/*.test.js\"",
+    "test:smoke": "node --test --test-concurrency=1 \"test/smoke/*.test.js\"",
+    "test:all": "node --test \"test/**/*.test.js\""
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
