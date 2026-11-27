@@ -33,6 +33,7 @@ GitHub Actions ── OIDC ──► Entra ID app (federated credentials, no sec
 | `test/smoke/` | Playwright smoke test: both languages at 360 px, no console errors, no CSP violations |
 | `tools/serve.mjs` | Local server that applies the same headers as production |
 | `tools/check-headers.mjs` | Verifies headers and content on a deployed URL |
+| `tools/limits-analysis.mjs` | Plot sizes for which the EUR 350..800/m2 land value limits do not override the table |
 
 ### Calculation
 
@@ -40,9 +41,11 @@ GitHub Actions ── OIDC ──► Entra ID app (federated credentials, no sec
 The published table (Bijlage 1, Gemeenteblad 2026, 547830) is the only source of the result.
 A derived formula (`test/helpers/derived.js`) is used only in tests to check the table's integrity.
 
-Remaining years = whole years from the conversion date up to and including the end date of the
-buy-off period (a period that ends 30-06-2037 runs until 01-07-2037). When part of a year remains,
-the page also shows the amount for the next whole year up. No result outside 5..49 years, for periodic
+Remaining years: the publication gives no counting rule, so with an end date the page compares every
+plausible count (whole years with the end date inclusive, whole years with it exclusive, and part of a
+year rounded up) and shows the **highest** amount (pessimistic scenario), with the range. The table is
+not monotonic (13 years: 22.99%, 14 years: 22.13%), so the highest amount is not always the rounded-up
+count. The 5..49 range check uses whole years with the end date inclusive. No result outside 5..49 years, for periodic
 canon, non-50-year buy-offs, BKZ land, non-residential use, or "I don't know" answers.
 
 ## Run locally

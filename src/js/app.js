@@ -164,12 +164,11 @@ function renderResult(o) {
     [tr('result_years_label'), tr('result_years_value', { n: o.n })],
   ]));
 
-  if (o.next) {
-    box.append(el('p', 'note', o.next.pct
-      ? tr('result_fraction', {
-        n: o.n, next: o.next.n, amount: formatEuro(lang, o.next.amount), pct: formatPct(lang, o.next.pct),
-      })
-      : tr('result_fraction_none', { n: o.n, next: o.next.n })));
+  if (o.scenarios.length > 1 && o.min !== o.max) {
+    box.append(el('p', 'note', tr('result_range', { min: formatEuro(lang, o.min), max: formatEuro(lang, o.max) })));
+  }
+  if (o.outside.length) {
+    box.append(el('p', 'note', tr('result_outside', { list: o.outside.join(', ') })));
   }
 
   const disc = el('div', 'notice notice-warn');
@@ -185,13 +184,20 @@ function renderResult(o) {
   how.append(el('summary', null, tr('how_title')));
   const steps = el('ol');
   const p = data.parameters;
-  steps.append(
-    el('li', null, o.mode === 'endDate'
-      ? tr('how_years_endDate', {
-        conversion: formatDate(lang, o.conversionDate), end: formatDate(lang, o.endDate), n: o.n,
-      })
-      : tr('how_years_direct', { n: o.n })),
-  );
+  const first = el('li', null, o.mode === 'endDate'
+    ? tr('how_years_endDate', { conversion: formatDate(lang, o.conversionDate), end: formatDate(lang, o.endDate) })
+    : tr('how_years_direct', { n: o.n }));
+  if (o.mode === 'endDate') {
+    const list = el('ul');
+    for (const sc of o.scenarios) {
+      const line = tr('scenario_line', {
+        label: tr(`scenario_${sc.basis}`), n: sc.n, pct: formatPct(lang, sc.pct), amount: formatEuro(lang, sc.amount),
+      });
+      list.append(el('li', sc.n === o.n ? 'chosen' : null, sc.n === o.n ? `${line} ${tr('scenario_chosen')}` : line));
+    }
+    first.append(list);
+  }
+  steps.append(first);
   if (o.mode === 'endDate') steps.append(el('li', null, tr('how_rounding')));
   steps.append(
     el('li', null, tr('how_table', { year: data.year, n: o.n, pct })),

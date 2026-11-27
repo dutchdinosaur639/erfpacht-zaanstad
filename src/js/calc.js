@@ -206,15 +206,28 @@ export function evaluate(input, data, now) {
   }
   if (Object.keys(errors).length) return { kind: 'invalid', errors };
 
+  // Candidate counts of remaining years. The publication gives no counting rule, so with an end
+  // date we consider every plausible reading and show the highest amount (pessimistic scenario):
+  //  - floorInclusive: whole years, the end date counts as a day of the period (primary reading)
+  //  - floorExclusive: whole years, the period stops at the start of the end date
+  //  - ceil:           part of a year rounded up
   let n;
   let whole = true;
+  let candidates;
   if (input.mode === 'years') {
     n = yearsInput;
+    candidates = [{ n, basis: 'entered' }];
   } else {
     const r = remainingYears(conversion, end);
     if (r.ended) return { kind: 'blocked', reasons: ['periodEnded'] };
     n = r.years;
     whole = r.whole;
+    // Primary reading first, so that it keeps its label when two readings give the same count.
+    candidates = [
+      { n, basis: 'floorInclusive' },
+      { n: completedYears(conversion, end), basis: 'floorExclusive' },
+    ];
+    if (!whole) candidates.push({ n: n + 1, basis: 'ceil' });
   }
 
   const minN = Math.min(...Object.keys(data.table).map(Number));
@@ -222,24 +235,34 @@ export function evaluate(input, data, now) {
   if (n < minN) return { kind: 'blocked', reasons: ['yearsBelowMin'], n, minN, maxN };
   if (n > maxN) return { kind: 'blocked', reasons: ['yearsAboveMax'], n, minN, maxN };
 
-  const pct = lookupPct(data, n);
-  const result = {
+  const seen = new Set();
+  const scenarios = [];
+  const outside = [];
+  for (const c of candidates) {
+    if (seen.has(c.n)) continue;
+    seen.add(c.n);
+    const pct = lookupPct(data, c.n);
+    if (pct) scenarios.push({ ...c, pct, amount: koopsomEuros(woz.cents, pct) });
+    else outside.push(c.n);
+  }
+  scenarios.sort((a, b) => a.n - b.n);
+  const chosen = scenarios.reduce((best, s) => (s.amount > best.amount ? s : best));
+  const amounts = scenarios.map((s) => s.amount);
+
+  return {
     kind: 'result',
     mode: input.mode,
-    n,
+    n: chosen.n,
+    pct: chosen.pct,
+    amount: chosen.amount,
+    basis: chosen.basis,
     whole,
-    pct,
-    amount: koopsomEuros(woz.cents, pct),
+    scenarios,
+    outside,
+    min: Math.min(...amounts),
+    max: Math.max(...amounts),
     wozCents: woz.cents,
     conversionDate: toISO(conversion),
     endDate: end ? toISO(end) : null,
-    next: null,
   };
-  if (!whole) {
-    const nextPct = lookupPct(data, n + 1);
-    result.next = nextPct
-      ? { n: n + 1, pct: nextPct, amount: koopsomEuros(woz.cents, nextPct) }
-      : { n: n + 1, pct: null, amount: null };
-  }
-  return result;
 }

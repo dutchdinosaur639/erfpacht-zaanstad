@@ -10,35 +10,58 @@ const base = {
 };
 const run = (over, now = NOW) => evaluate({ ...base, ...over }, data, now);
 
-test('happy path with years', () => {
+test('happy path with years: single scenario', () => {
   const r = run({});
   assert.equal(r.kind, 'result');
   assert.equal(r.n, 13);
   assert.equal(r.pct, '22.99');
   assert.equal(r.amount, 91960);
-  assert.equal(r.next, null);
+  assert.deepEqual(r.scenarios.map((s) => s.n), [13]);
+  assert.equal(r.min, r.max);
 });
 
-test('happy path with end date (whole years)', () => {
+test('whole period by end date: inclusive vs exclusive counting, highest amount wins', () => {
+  // 01-01-2027 up to and including 31-12-2056 = 30 whole years; exclusive counting gives 29.
   const r = run({ mode: 'endDate', endDate: '2056-12-31' });
   assert.equal(r.kind, 'result');
+  assert.deepEqual(r.scenarios.map((s) => [s.basis, s.n, s.amount]), [
+    ['floorExclusive', 29, 136920], ['floorInclusive', 30, 140760],
+  ]);
   assert.equal(r.n, 30);
   assert.equal(r.amount, 140760);
+  assert.equal(r.basis, 'floorInclusive');
   assert.equal(r.whole, true);
-  assert.equal(r.next, null);
 });
 
-test('fractional period shows next whole year up', () => {
-  const r = run({ mode: 'endDate', endDate: '2040-04-30', conversionDate: '2027-01-01' });
+test('fractional period 13.3 years: 13 beats 14 because of the published drop', () => {
+  const r = run({ mode: 'endDate', endDate: '2040-04-30' });
+  assert.deepEqual(r.scenarios.map((s) => [s.n, s.amount]), [[13, 91960], [14, 88520]]);
   assert.equal(r.n, 13);
-  assert.equal(r.whole, false);
-  assert.deepEqual(r.next, { n: 14, pct: '22.13', amount: 88520 });
+  assert.equal(r.amount, 91960);
+  assert.equal(r.min, 88520);
+  assert.equal(r.max, 91960);
 });
 
-test('fractional at n=49: no table value for 50', () => {
+test('fractional period 20.5 years: rounding up gives the highest amount', () => {
+  const r = run({ mode: 'endDate', endDate: '2047-06-30' });
+  assert.deepEqual(r.scenarios.map((s) => [s.n, s.pct]), [[20, '26.49'], [21, '27.27']]);
+  assert.equal(r.n, 21);
+  assert.equal(r.basis, 'ceil');
+  assert.equal(r.amount, 109080);
+});
+
+test('fractional at 49.x: 50 is not in the table and is reported as outside', () => {
   const r = run({ mode: 'endDate', endDate: '2076-06-30' });
   assert.equal(r.n, 49);
-  assert.deepEqual(r.next, { n: 50, pct: null, amount: null });
+  assert.deepEqual(r.outside, [50]);
+  assert.deepEqual(r.scenarios.map((s) => s.n), [49]);
+});
+
+test('exactly 5 years by end date: exclusive count 4 is outside the table, 5 is used', () => {
+  const r = run({ mode: 'endDate', endDate: '2031-12-31' });
+  assert.equal(r.kind, 'result');
+  assert.equal(r.n, 5);
+  assert.deepEqual(r.outside, [4]);
 });
 
 for (const [n, kind, reason] of [[4, 'blocked', 'yearsBelowMin'], [5, 'result'], [49, 'result'], [50, 'blocked', 'yearsAboveMax'], [0, 'blocked', 'yearsBelowMin']]) {
@@ -54,7 +77,8 @@ for (const [end, n, kind] of [['2031-12-31', 5, 'result'], ['2032-01-01', 5, 're
   test(`boundary via end date ${end} -> n=${n} ${kind}`, () => {
     const r = run({ mode: 'endDate', endDate: end });
     assert.equal(r.kind, kind);
-    assert.equal(r.n, n);
+    if (kind === 'blocked') assert.equal(r.n, n);
+    else assert.ok(r.scenarios.some((s) => s.basis === 'floorInclusive' && s.n === n));
   });
 }
 

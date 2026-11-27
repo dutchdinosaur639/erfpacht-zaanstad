@@ -69,7 +69,7 @@ for (const [locale, lang, woz, amount, next, title] of [
     await result.locator('h2').waitFor();
     const text = (await result.innerText()).replace(/ | /g, ' ');
     assert.ok(text.includes(amount), `amount ${amount} in: ${text}`);
-    assert.ok(text.includes(next), `next-year amount ${next}`);
+    assert.ok(text.includes(next), `range includes ${next}`);
     assert.equal(await result.getAttribute('aria-live'), 'polite');
     await page.click('.how summary');
     if (shotDir) await page.screenshot({ path: `${shotDir}/smoke-${lang}.png`, fullPage: true });
