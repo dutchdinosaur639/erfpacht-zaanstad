@@ -48,7 +48,8 @@ jobs:
     # Same-repository PRs only: fork PRs never reach a job with Azure access.
     if: >-
       github.event_name == 'pull_request' && github.event.action != 'closed' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      vars.AZURE_CLIENT_ID != ''
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -87,7 +88,8 @@ jobs:
   close-preview:
     if: >-
       github.event_name == 'pull_request' && github.event.action == 'closed' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      vars.AZURE_CLIENT_ID != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: preview
@@ -114,7 +116,8 @@ jobs:
           app_location: src
 
   production:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Skipped until the one-time Azure setup has set the repository variables.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AZURE_CLIENT_ID != ''
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 15

@@ -10,7 +10,7 @@ export default Object.freeze({
 
   // Publisher and contact line shown in the footer. Must be set before the
   // production deploy; the pipeline test "publisher is set" enforces this.
-  publisher: '<PUBLISHER_NAME_AND_CONTACT>',
+  publisher: 'dutchdinosaur639 via github.com/dutchdinosaur639/erfpacht-zaanstad/issues',
 
   // The table applies only to a buy-off period (afkoopperiode) of this length.
   buyOffPeriodYears: 50,

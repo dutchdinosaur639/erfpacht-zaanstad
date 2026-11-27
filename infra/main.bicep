@@ -1,6 +1,7 @@
 // Subscription-scope entry point: one resource group with one Free Static Web App,
-// plus a least-privilege custom role for the pipeline identity, scoped to that resource group.
-// No billable resources: SWA Free, a role definition and a role assignment are free.
+// plus the pipeline's managed identity and a least-privilege custom role, all scoped to that group.
+// No billable resources: SWA Free, a user-assigned managed identity, a role definition and a
+// role assignment are free.
 targetScope = 'subscription'
 
 @description('Resource group that holds only this app.')
@@ -13,8 +14,17 @@ param location string = 'westeurope'
 @description('Static Web App name; becomes part of the default *.azurestaticapps.net hostname.')
 param staticSiteName string = 'swa-erfpacht-zaanstad'
 
-@description('Object ID of the service principal used by GitHub Actions (OIDC). Leave empty to skip the role assignment.')
-param pipelinePrincipalId string = ''
+@description('User-assigned managed identity that GitHub Actions signs in as (OIDC, no secrets).')
+param identityName string = 'id-erfpacht-zaanstad-github'
+
+@description('GitHub owner login and numeric ID, repository name and numeric ID (for OIDC subjects).')
+param githubOwner string
+param githubOwnerId string
+param githubRepo string
+param githubRepoId string
+
+@description('GitHub environments allowed to sign in.')
+param githubEnvironments array = [ 'preview', 'production' ]
 
 param tags object = {
   app: 'erfpacht-zaanstad'
@@ -33,7 +43,12 @@ module app 'app.bicep' = {
   params: {
     location: location
     staticSiteName: staticSiteName
-    pipelinePrincipalId: pipelinePrincipalId
+    identityName: identityName
+    githubOwner: githubOwner
+    githubOwnerId: githubOwnerId
+    githubRepo: githubRepo
+    githubRepoId: githubRepoId
+    githubEnvironments: githubEnvironments
     tags: tags
   }
 }
@@ -41,3 +56,5 @@ module app 'app.bicep' = {
 output resourceGroupName string = rg.name
 output staticSiteName string = app.outputs.staticSiteName
 output defaultHostname string = app.outputs.defaultHostname
+output pipelineClientId string = app.outputs.pipelineClientId
+output tenantId string = app.outputs.tenantId

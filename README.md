@@ -14,7 +14,7 @@ Browser (all calculation client-side, no cookies, no third-party requests)
    ▼
 Azure Static Web Apps, Free plan (one app, its own resource group)
    ▲
-GitHub Actions ── OIDC ──► Entra ID app (federated credentials, no secrets)
+GitHub Actions ── OIDC ──► user-assigned managed identity (federated credentials, no secrets)
    │                         └─ custom role on the resource group only:
    │                            Microsoft.Web/staticSites/read + listSecrets/action
    └─ reads the SWA deployment token at run time, masks it, deploys src/
@@ -27,7 +27,7 @@ GitHub Actions ── OIDC ──► Entra ID app (federated credentials, no sec
 | `src/js/i18n.js` | All strings (`nl`, `en`), language detection, formatting |
 | `src/js/app.js` | DOM wiring only |
 | `src/staticwebapp.config.json` | Security headers (CSP without `unsafe-inline`, Trusted Types, HSTS, etc.) |
-| `infra/` | Bicep: resource group, `Microsoft.Web/staticSites` (sku Free), custom least-privilege role |
+| `infra/` | Bicep: resource group, `Microsoft.Web/staticSites` (sku Free), pipeline managed identity with GitHub federated credentials, custom least-privilege role |
 | `.github/workflows/ci-cd.yml` | PR: tests + preview. Push to main: tests, then production deploy + header check |
 | `test/unit/` | `node:test` unit tests (table, amounts, dates, parsing, eligibility, i18n, validity) |
 | `test/smoke/` | Playwright smoke test: both languages at 360 px, no console errors, no CSP violations |
@@ -72,79 +72,69 @@ npx playwright install chromium && npm run test:smoke
 
 ## One-time setup
 
-Run these yourself, signed in with `az login` (Owner or User Access Administrator on the subscription)
-and `gh auth login`. The values below match the defaults in `infra/main.bicepparam`.
+Run these yourself, signed in with `az login` and `gh auth login`. Requirements: **Owner** or
+**User Access Administrator** on the subscription (the deployment creates a custom role and a role
+assignment). No Entra ID directory permissions are needed: the pipeline signs in as a
+**user-assigned managed identity** with GitHub federated credentials, all created by Bicep.
+
+The GitHub owner and repository IDs for the OIDC subjects are in `infra/main.bicepparam`
+(repositories created after 15 July 2026 use `repo:OWNER@OWNER_ID/REPO@REPO_ID:...`). If the
+repository is ever recreated, update them:
 
 ```bash
-OWNER=dutchdinosaur639
-REPO=erfpacht-zaanstad
-RG=rg-erfpacht-zaanstad
-SWA=swa-erfpacht-zaanstad
-SUB_ID=$(az account show --query id -o tsv)
-TENANT_ID=$(az account show --query tenantId -o tsv)
-OWNER_ID=$(gh api repos/$OWNER/$REPO --jq .owner.id)
-REPO_ID=$(gh api repos/$OWNER/$REPO --jq .id)
+gh api repos/dutchdinosaur639/erfpacht-zaanstad --jq '[.owner.id, .id]'
 ```
 
-1. Entra ID app and service principal for the pipeline (no client secret is created):
+1. Check your role on the subscription:
 
 ```bash
-APP_ID=$(az ad app create --display-name "github-$REPO-deploy" --query appId -o tsv)
+az role assignment list --assignee "$(az ad signed-in-user show --query id -o tsv)" --scope "/subscriptions/$(az account show --query id -o tsv)" --include-inherited --query "[].roleDefinitionName" -o tsv
 ```
 
-```bash
-SP_OBJECT_ID=$(az ad sp create --id "$APP_ID" --query id -o tsv)
-```
-
-2. Federated credentials. Repositories created after 15 July 2026 use GitHub's immutable OIDC
-subject format `repo:OWNER@OWNER_ID/REPO@REPO_ID:...`. Both jobs that use Azure run in a GitHub
-environment, so only environment subjects are needed:
+2. Preview, then deploy the infrastructure (resource group, Static Web App Free, managed identity,
+two federated credentials, custom role, role assignment):
 
 ```bash
-for ENV in preview production; do
-  az ad app federated-credential create --id "$APP_ID" --parameters "{\"name\":\"github-$ENV\",\"issuer\":\"https://token.actions.githubusercontent.com\",\"subject\":\"repo:$OWNER@$OWNER_ID/$REPO@$REPO_ID:environment:$ENV\",\"audiences\":[\"api://AzureADTokenExchange\"]}"
-done
-```
-
-If `azure/login` fails with `AADSTS700213` (no matching federated identity), the error shows the
-subject GitHub presented; update the credential to that exact value.
-
-3. Infrastructure (preview first, then deploy):
-
-```bash
-PIPELINE_SP_OBJECT_ID=$SP_OBJECT_ID az deployment sub what-if --location westeurope --template-file infra/main.bicep --parameters infra/main.bicepparam
+az deployment sub what-if --location westeurope --name erfpacht-zaanstad --template-file infra/main.bicep --parameters infra/main.bicepparam
 ```
 
 ```bash
-PIPELINE_SP_OBJECT_ID=$SP_OBJECT_ID az deployment sub create --location westeurope --template-file infra/main.bicep --parameters infra/main.bicepparam
+az deployment sub create --location westeurope --name erfpacht-zaanstad --template-file infra/main.bicep --parameters infra/main.bicepparam
 ```
 
-4. GitHub environments, branch restriction for production, read-only default token, variables
-(identifiers only; none of these are secrets):
+3. GitHub environments, branch restriction for production, read-only default token:
 
 ```bash
-gh api -X PUT repos/$OWNER/$REPO/environments/preview
-```
-
-```bash
-gh api -X PUT repos/$OWNER/$REPO/environments/production -F "deployment_branch_policy[protected_branches]=false" -F "deployment_branch_policy[custom_branch_policies]=true"
+gh api -X PUT repos/dutchdinosaur639/erfpacht-zaanstad/environments/preview
 ```
 
 ```bash
-gh api -X POST repos/$OWNER/$REPO/environments/production/deployment-branch-policies -f name=main -f type=branch
+gh api -X PUT repos/dutchdinosaur639/erfpacht-zaanstad/environments/production -F "deployment_branch_policy[protected_branches]=false" -F "deployment_branch_policy[custom_branch_policies]=true"
 ```
 
 ```bash
-gh api -X PUT repos/$OWNER/$REPO/actions/permissions/workflow -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false
+gh api -X POST repos/dutchdinosaur639/erfpacht-zaanstad/environments/production/deployment-branch-policies -f name=main -f type=branch
 ```
 
 ```bash
-gh variable set AZURE_CLIENT_ID --repo $OWNER/$REPO --body "$APP_ID"
-gh variable set AZURE_TENANT_ID --repo $OWNER/$REPO --body "$TENANT_ID"
-gh variable set AZURE_SUBSCRIPTION_ID --repo $OWNER/$REPO --body "$SUB_ID"
-gh variable set SWA_NAME --repo $OWNER/$REPO --body "$SWA"
-gh variable set SWA_RESOURCE_GROUP --repo $OWNER/$REPO --body "$RG"
+gh api -X PUT repos/dutchdinosaur639/erfpacht-zaanstad/actions/permissions/workflow -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false
 ```
+
+4. Repository variables from the deployment outputs (identifiers only, not secrets). The Azure
+jobs stay skipped until `AZURE_CLIENT_ID` is set:
+
+```bash
+R=dutchdinosaur639/erfpacht-zaanstad
+out() { az deployment sub show --name erfpacht-zaanstad --query "properties.outputs.$1.value" -o tsv; }
+gh variable set AZURE_CLIENT_ID --repo $R --body "$(out pipelineClientId)"
+gh variable set AZURE_TENANT_ID --repo $R --body "$(out tenantId)"
+gh variable set AZURE_SUBSCRIPTION_ID --repo $R --body "$(az account show --query id -o tsv)"
+gh variable set SWA_NAME --repo $R --body "$(out staticSiteName)"
+gh variable set SWA_RESOURCE_GROUP --repo $R --body "$(out resourceGroupName)"
+```
+
+If `azure/login` fails with `AADSTS700213` (no matching federated identity record), the error shows
+the subject GitHub presented; compare it with the subject in `infra/app.bicep`.
 
 Fork pull requests run the tests only; the preview and close jobs are skipped for forks, and
 `pull_request` (not `pull_request_target`) never exposes OIDC tokens to fork code.
@@ -177,22 +167,19 @@ git push origin main
 
 ## Teardown
 
-Remove the role assignment and the custom role while their scope still exists, then the group:
+Delete the custom role while its scope still exists (deleting its assignment first), then the
+resource group, which also removes the Static Web App, the managed identity and its credentials:
 
 ```bash
-az role assignment delete --assignee "$SP_OBJECT_ID" --resource-group rg-erfpacht-zaanstad
+az role assignment delete --resource-group rg-erfpacht-zaanstad --role "SWA deployment token reader (rg-erfpacht-zaanstad)"
 ```
 
 ```bash
-az role definition delete --name "SWA deployment token reader (rg-erfpacht-zaanstad)" --scope "/subscriptions/$SUB_ID/resourceGroups/rg-erfpacht-zaanstad"
+az role definition delete --name "SWA deployment token reader (rg-erfpacht-zaanstad)" --scope "/subscriptions/$(az account show --query id -o tsv)/resourceGroups/rg-erfpacht-zaanstad"
 ```
 
 ```bash
 az group delete --name rg-erfpacht-zaanstad --yes
-```
-
-```bash
-az ad app delete --id "$APP_ID"
 ```
 
 ```bash
